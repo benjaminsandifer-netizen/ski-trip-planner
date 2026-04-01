@@ -17,7 +17,24 @@ const CHECKBOX_LABEL =
 
 const fmt = (n) => "$" + Math.round(n).toLocaleString();
 
-export default function CostEstimator() {
+// Try to extract a number from a price string like "$350/night", "350", "$1,200/night"
+function parseNightlyRate(priceStr) {
+  const match = priceStr.replace(/,/g, "").match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+// Shorten a URL for display
+function shortUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace("www.", "");
+    return host + (u.pathname.length > 20 ? u.pathname.slice(0, 20) + "..." : u.pathname);
+  } catch {
+    return url.length > 30 ? url.slice(0, 30) + "..." : url;
+  }
+}
+
+export default function CostEstimator({ houses = [] }) {
   // Trip basics
   const [tripDays, setTripDays] = useState(5);
   const [skiDays, setSkiDays] = useState(4);
@@ -33,19 +50,8 @@ export default function CostEstimator() {
   const [apresBudget, setApresBudget] = useState(30);
 
   // Accommodation
-  const [houses, setHouses] = useState([
-    { name: "House Option 1", nightlyRate: 800 },
-    { name: "House Option 2", nightlyRate: 600 },
-    { name: "House Option 3", nightlyRate: 1000 },
-  ]);
-  const [selectedHouse, setSelectedHouse] = useState(0);
+  const [selectedHouseIdx, setSelectedHouseIdx] = useState(0);
   const [groupSize, setGroupSize] = useState(12);
-
-  function updateHouse(idx, field, value) {
-    setHouses((prev) =>
-      prev.map((h, i) => (i === idx ? { ...h, [field]: value } : h))
-    );
-  }
 
   // Calculations
   const liftCost = RESORTS[resort].rate * skiDays;
@@ -55,8 +61,10 @@ export default function CostEstimator() {
   const foodCost = foodBudget * tripDays;
   const apresCost = apresBudget * tripDays;
 
-  const house = houses[selectedHouse];
-  const totalAccom = house ? house.nightlyRate * (tripDays - 1) : 0; // nights = days - 1
+  const selectedHouse = houses[selectedHouseIdx];
+  const nightlyRate = selectedHouse ? parseNightlyRate(selectedHouse.price) : 0;
+  const nights = Math.max(0, tripDays - 1);
+  const totalAccom = nightlyRate * nights;
   const accomPerPerson = groupSize > 0 ? totalAccom / groupSize : 0;
 
   const perPerson =
@@ -84,8 +92,8 @@ export default function CostEstimator() {
       label: `Apres ski / drinks (${tripDays} days @ ${fmt(apresBudget)}/day)`,
       value: apresCost,
     },
-    house && {
-      label: `${house.name} (${tripDays - 1} nights @ ${fmt(house.nightlyRate)}/night ÷ ${groupSize})`,
+    selectedHouse && nightlyRate > 0 && {
+      label: `Accommodation (${nights} nights @ ${fmt(nightlyRate)}/night ÷ ${groupSize})`,
       value: accomPerPerson,
     },
   ].filter(Boolean);
@@ -276,42 +284,44 @@ export default function CostEstimator() {
           />
         </label>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {houses.map((h, i) => (
-            <button
-              key={i}
-              onClick={() => setSelectedHouse(i)}
-              className={`rounded-xl border-2 p-3 text-left transition-colors ${
-                selectedHouse === i
-                  ? "border-sky-500 bg-sky-50"
-                  : "border-sky-200 bg-white hover:border-sky-300"
-              }`}
-            >
-              <input
-                type="text"
-                value={h.name}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => updateHouse(i, "name", e.target.value)}
-                className="w-full text-sm font-semibold text-sky-900 bg-transparent border-none outline-none p-0"
-              />
-              <div className="flex items-center gap-1 mt-1">
-                <span className="text-xs text-slate-500">$</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={h.nightlyRate}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => updateHouse(i, "nightlyRate", Math.max(0, +e.target.value))}
-                  className="w-20 text-lg font-bold text-sky-800 bg-transparent border-none outline-none p-0"
-                />
-                <span className="text-xs text-slate-500">/night</span>
-              </div>
-              <p className="text-xs text-slate-500 mt-1">
-                {fmt(h.nightlyRate * (tripDays - 1))} total · {fmt(h.nightlyRate * (tripDays - 1) / groupSize)}/person
-              </p>
-            </button>
-          ))}
-        </div>
+        {houses.length === 0 ? (
+          <div className="rounded-xl border-2 border-dashed border-sky-200 p-6 text-center">
+            <p className="text-sm text-slate-400">
+              No houses added yet. Add houses in the <span className="font-semibold text-sky-600">House Voting</span> section below to see accommodation costs here.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {houses.map((h, i) => {
+              const rate = parseNightlyRate(h.price);
+              const total = rate * nights;
+              const pp = groupSize > 0 ? total / groupSize : 0;
+              const isSelected = selectedHouseIdx === i;
+
+              return (
+                <button
+                  key={h.id}
+                  onClick={() => setSelectedHouseIdx(i)}
+                  className={`rounded-xl border-2 p-3 text-left transition-colors ${
+                    isSelected
+                      ? "border-sky-500 bg-sky-50"
+                      : "border-sky-200 bg-white hover:border-sky-300"
+                  }`}
+                >
+                  <p className="text-xs text-sky-600 font-medium truncate">
+                    {shortUrl(h.link)}
+                  </p>
+                  <p className="text-lg font-bold text-sky-800 mt-1">{h.price}</p>
+                  {rate > 0 && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      {fmt(total)} total ({nights} nights) · <span className="font-semibold text-sky-700">{fmt(pp)}/person</span>
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Itemized Breakdown ── */}
@@ -326,6 +336,11 @@ export default function CostEstimator() {
               <span className="font-semibold text-slate-800">{fmt(item.value)}</span>
             </div>
           ))}
+          {houses.length > 0 && !selectedHouse && (
+            <div className="text-sm text-slate-400 italic">
+              Select a house above to include accommodation
+            </div>
+          )}
           <div className="border-t border-sky-300 my-2" />
           <div className="flex justify-between text-base">
             <span className="font-bold text-sky-900">Per Person Total</span>

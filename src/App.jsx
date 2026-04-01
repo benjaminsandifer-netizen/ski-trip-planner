@@ -5,16 +5,19 @@ import HouseVoting from "./components/HouseVoting";
 import WeatherWidget from "./components/WeatherWidget";
 import RestaurantList from "./components/RestaurantList";
 import ShoppingList from "./components/ShoppingList";
+import { useHouses } from "./lib/useHouses";
 
 function App() {
+  const { houses, setHouses, saveLocal } = useHouses();
+
   return (
     <div className="min-h-screen">
       <Hero />
       <main className="max-w-4xl mx-auto px-4 py-8 flex flex-col gap-8">
         <WeatherWidget />
-        <CostEstimator />
+        <CostEstimator houses={houses} />
         <DateVoting />
-        <HouseVoting />
+        <HouseVoting houses={houses} setHouses={setHouses} saveLocal={saveLocal} />
         <RestaurantList />
         <ShoppingList />
       </main>

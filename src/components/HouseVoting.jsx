@@ -2,18 +2,17 @@ import { useState, useEffect } from "react";
 import { supabase, supabaseEnabled } from "../lib/supabase";
 import SectionCard from "./SectionCard";
 
-const LS_KEY = "ski-trip-houses";
 const LS_COMMENTS_KEY = "ski-trip-house-comments";
 
-function loadLocal(key, fallback) {
+function loadLocalComments() {
   try {
-    return JSON.parse(localStorage.getItem(key)) || fallback;
+    return JSON.parse(localStorage.getItem(LS_COMMENTS_KEY)) || {};
   } catch {
-    return fallback;
+    return {};
   }
 }
-function saveLocal(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
+function saveLocalComments(data) {
+  localStorage.setItem(LS_COMMENTS_KEY, JSON.stringify(data));
 }
 
 function formatTime(iso) {
@@ -27,66 +26,40 @@ function formatTime(iso) {
   });
 }
 
-export default function HouseVoting() {
-  const [houses, setHouses] = useState([]);
-  const [comments, setComments] = useState({}); // { houseId: [{ id, author, text, created_at }] }
+export default function HouseVoting({ houses, setHouses, saveLocal }) {
+  const [comments, setComments] = useState({});
   const [link, setLink] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
   const [price, setPrice] = useState("");
   const [voterName, setVoterName] = useState("");
-  const [commentTexts, setCommentTexts] = useState({}); // { houseId: "draft text" }
+  const [commentTexts, setCommentTexts] = useState({});
 
-  // Load houses + votes + comments on mount
+  // Load comments on mount
   useEffect(() => {
     if (supabaseEnabled) {
-      loadFromSupabase();
+      supabase
+        .from("house_comments")
+        .select("*")
+        .order("created_at", { ascending: true })
+        .then(({ data: cmts }) => {
+          if (!cmts) return;
+          const commentsByHouse = {};
+          for (const c of cmts) {
+            if (!commentsByHouse[c.house_id]) commentsByHouse[c.house_id] = [];
+            commentsByHouse[c.house_id].push({
+              id: c.id,
+              author: c.author,
+              text: c.text,
+              created_at: c.created_at,
+            });
+          }
+          setComments(commentsByHouse);
+        })
+        .catch(() => setComments(loadLocalComments()));
     } else {
-      setHouses(loadLocal(LS_KEY, []));
-      setComments(loadLocal(LS_COMMENTS_KEY, {}));
+      setComments(loadLocalComments());
     }
   }, []);
-
-  async function loadFromSupabase() {
-    try {
-      const [{ data: listings }, { data: votes }, { data: cmts }] = await Promise.all([
-        supabase.from("house_listings").select("*").order("created_at", { ascending: true }),
-        supabase.from("house_votes").select("*"),
-        supabase.from("house_comments").select("*").order("created_at", { ascending: true }),
-      ]);
-      if (!listings) return;
-
-      const votesByHouse = {};
-      for (const v of votes || []) {
-        if (!votesByHouse[v.house_id]) votesByHouse[v.house_id] = {};
-        votesByHouse[v.house_id][v.voter_name] = v.direction;
-      }
-
-      setHouses(
-        listings.map((h) => ({
-          id: h.id,
-          link: h.link,
-          photoUrl: h.photo_url || "",
-          price: h.price,
-          votes: votesByHouse[h.id] || {},
-        }))
-      );
-
-      const commentsByHouse = {};
-      for (const c of cmts || []) {
-        if (!commentsByHouse[c.house_id]) commentsByHouse[c.house_id] = [];
-        commentsByHouse[c.house_id].push({
-          id: c.id,
-          author: c.author,
-          text: c.text,
-          created_at: c.created_at,
-        });
-      }
-      setComments(commentsByHouse);
-    } catch {
-      setHouses(loadLocal(LS_KEY, []));
-      setComments(loadLocal(LS_COMMENTS_KEY, {}));
-    }
-  }
 
   async function addHouse(e) {
     e.preventDefault();
@@ -114,7 +87,7 @@ export default function HouseVoting() {
       };
       setHouses((prev) => {
         const next = [...prev, house];
-        saveLocal(LS_KEY, next);
+        saveLocal(next);
         return next;
       });
     }
@@ -128,10 +101,12 @@ export default function HouseVoting() {
     if (!voterName.trim()) return;
     const trimmed = voterName.trim();
 
+    const house = houses.find((h) => h.id === houseId);
+    const current = house?.votes[trimmed];
+
     setHouses((prev) => {
       const next = prev.map((h) => {
         if (h.id !== houseId) return h;
-        const current = h.votes[trimmed];
         const newVotes = { ...h.votes };
         if (current === direction) {
           delete newVotes[trimmed];
@@ -140,14 +115,11 @@ export default function HouseVoting() {
         }
         return { ...h, votes: newVotes };
       });
-      if (!supabaseEnabled) saveLocal(LS_KEY, next);
+      if (!supabaseEnabled) saveLocal(next);
       return next;
     });
 
     if (!supabaseEnabled) return;
-
-    const house = houses.find((h) => h.id === houseId);
-    const current = house?.votes[trimmed];
 
     if (current === direction) {
       await supabase
@@ -175,13 +147,13 @@ export default function HouseVoting() {
     }
     setHouses((prev) => {
       const next = prev.filter((h) => h.id !== houseId);
-      if (!supabaseEnabled) saveLocal(LS_KEY, next);
+      if (!supabaseEnabled) saveLocal(next);
       return next;
     });
     setComments((prev) => {
       const next = { ...prev };
       delete next[houseId];
-      if (!supabaseEnabled) saveLocal(LS_COMMENTS_KEY, next);
+      if (!supabaseEnabled) saveLocalComments(next);
       return next;
     });
   }
@@ -216,7 +188,7 @@ export default function HouseVoting() {
 
     setComments((prev) => {
       const next = { ...prev, [houseId]: [...(prev[houseId] || []), comment] };
-      if (!supabaseEnabled) saveLocal(LS_COMMENTS_KEY, next);
+      if (!supabaseEnabled) saveLocalComments(next);
       return next;
     });
     setCommentTexts((prev) => ({ ...prev, [houseId]: "" }));
