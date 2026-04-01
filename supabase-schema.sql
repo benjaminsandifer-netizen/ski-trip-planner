@@ -86,6 +86,21 @@ alter table shopping_items enable row level security;
 create policy "Allow all access to shopping_items"
   on shopping_items for all using (true) with check (true);
 
+-- 6. EXPENSES
+-- Each row = one expense logged by someone
+create table if not exists expenses (
+  id bigint generated always as identity primary key,
+  paid_by text not null,
+  description text not null,
+  amount numeric(10,2) not null,
+  split_between text[] not null,
+  created_at timestamptz not null default now()
+);
+
+alter table expenses enable row level security;
+create policy "Allow all access to expenses"
+  on expenses for all using (true) with check (true);
+
 -- Optional: enable realtime for all tables
 alter publication supabase_realtime add table date_options;
 alter publication supabase_realtime add table date_votes;
@@ -93,3 +108,4 @@ alter publication supabase_realtime add table house_listings;
 alter publication supabase_realtime add table house_votes;
 alter publication supabase_realtime add table house_comments;
 alter publication supabase_realtime add table shopping_items;
+alter publication supabase_realtime add table expenses;
